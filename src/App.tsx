@@ -10,10 +10,11 @@ import Settings from '@/pages/Settings';
 import Extensions from '@/pages/Extensions';
 import Admin from '@/pages/Admin';
 import Marketing from '@/pages/Marketing';
+import Storytellers, { type StorytellersConfig } from '@/components/Storytellers';
 import type { Document, Profile } from '@/lib/types';
-import { plainTextToContent } from '@/lib/ai';
+import { plainTextToContent, callAI } from '@/lib/ai';
 
-type View = 'loading' | 'auth' | 'home' | 'workspace' | 'settings' | 'admin' | 'extensions' | 'features' | 'usecases' | 'plans';
+type View = 'loading' | 'auth' | 'home' | 'storytellers' | 'workspace' | 'settings' | 'admin' | 'extensions' | 'features' | 'usecases' | 'plans';
 
 const EMPTY_CONTENT = { type: 'doc', content: [{ type: 'paragraph' }] };
 
@@ -24,6 +25,8 @@ export default function App() {
   const [activeDoc, setActiveDoc] = useState<Document | null>(null);
   const [saving, setSaving] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [pendingStory, setPendingStory] = useState<{ config: StorytellersConfig; generate: boolean } | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSave = useRef<{ content: Record<string, unknown>; plain: string; words: number } | null>(null);
 
@@ -64,6 +67,66 @@ export default function App() {
       console.error('Failed to create document:', err);
     }
   }
+
+  function handleStorytellersOpen(config: StorytellersConfig, generate: boolean) {
+    setPendingStory({ config, generate });
+    setGenerating(false);
+    setView('loading');
+  }
+
+  async function processPendingStory() {
+    if (!pendingStory || !workspace) return;
+    const { config, generate } = pendingStory;
+    setGenerating(true);
+
+    const title = config.workingTitle || config.topic.slice(0, 60) || config.writingTypeLabel || 'Untitled';
+
+    try {
+      let content = EMPTY_CONTENT;
+      let plain = '';
+      let words = 0;
+
+      if (generate) {
+        const instruction = buildStoryInstruction(config);
+        const res = await callAI({ action: 'write', instruction, workspaceId: workspace.id }, session?.access_token);
+        const titleMatch = res.content.match(/^#+ (.+)/m) ?? res.content.match(/^(.{10,80})/);
+        const genTitle = titleMatch ? titleMatch[1].replace(/^#+ /, '').trim() : title;
+        const body = res.content.replace(/^#+ .+\n*/m, '').trim();
+        plain = body || res.content;
+        words = plain.trim().split(/\s+/).length;
+        content = plainTextToContent(plain);
+        const doc = await createDocument(genTitle, content, plain);
+        if (doc) {
+          setActiveDoc({ ...doc, word_count: words });
+          setPendingStory(null);
+          setGenerating(false);
+          setView('workspace');
+          return;
+        }
+      } else {
+        const doc = await createDocument(title, content, plain);
+        if (doc) {
+          setActiveDoc({ ...doc, word_count: words });
+          setPendingStory(null);
+          setGenerating(false);
+          setView('workspace');
+          return;
+        }
+      }
+    } catch (err) {
+      console.error('Storytellers generation failed:', err);
+      setGenerating(false);
+      setView('home');
+    }
+
+    setPendingStory(null);
+  }
+
+  useEffect(() => {
+    if (pendingStory && workspace && view === 'loading') {
+      processPendingStory();
+    }
+  }, [pendingStory, workspace, view]);
 
   async function handleNewBlankDocument() {
     if (!workspace) return;
@@ -131,7 +194,14 @@ export default function App() {
       <div className="min-h-screen bg-[#fcfbff] dark:bg-stone-950 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <img src="/wlogo.webp" alt="Writelab" className="h-10 w-10 object-contain" />
-          <Loader2 size={18} className="animate-spin text-[#b07aa2]" />
+          {generating ? (
+            <div className="flex flex-col items-center gap-2">
+              <Loader2 size={18} className="animate-spin text-[#b07aa2]" />
+              <p className="text-xs text-[#7650a2] dark:text-stone-400">Drafting your story...</p>
+            </div>
+          ) : (
+            <Loader2 size={18} className="animate-spin text-[#b07aa2]" />
+          )}
         </div>
       </div>
     );
@@ -176,11 +246,21 @@ export default function App() {
     );
   }
 
+  if (view === 'storytellers') {
+    return (
+      <Storytellers
+        onOpenEditor={handleStorytellersOpen}
+        onBlankDraft={handleNewBlankDocument}
+      />
+    );
+  }
+
   if (view === 'home') {
     return (
       <Home
         session={session}
         onOpenWorkspace={handleNewDocumentFromHome}
+        onOpenStorytellers={() => setView('storytellers')}
         onOpenSettings={() => setView('settings')}
         onOpenAdmin={() => setView('admin')}
         onOpenExtensions={() => setView('extensions')}
@@ -213,4 +293,25 @@ export default function App() {
   }
 
   return null;
+}
+
+function buildStoryInstruction(config: StorytellersConfig): string {
+  const typeMap: Record<string, string> = {
+    blog: 'a blog post about',
+    email: 'a professional email about',
+    linkedin: 'a LinkedIn post about',
+    docs: 'technical documentation for',
+    essay: 'a thoughtful essay about',
+    report: 'a report on',
+  };
+  const base = typeMap[config.writingType] ?? 'a piece about';
+  const parts: string[] = [`${base} ${config.topic.trim()}`];
+  if (config.goal) parts.push(`Primary goal: ${config.goal}.`);
+  if (config.targetAudience) parts.push(`Target audience: ${config.targetAudience}.`);
+  if (config.keyPoints) parts.push(`Key points to cover: ${config.keyPoints}.`);
+  if (config.tone) parts.push(`Tone: ${config.tone.toLowerCase()}.`);
+  if (config.length) parts.push(`Length: ${config.length}.`);
+  if (config.language && config.language !== 'English') parts.push(`Write in ${config.language}.`);
+  if (config.workingTitle) parts.push(`Use "${config.workingTitle}" as the working title.`);
+  return parts.join(' ');
 }

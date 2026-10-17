@@ -1,31 +1,28 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  PenLine, Sparkles, ArrowRight, Loader2, FileText,
-  Wand2, BookOpen, Mail, Linkedin, FileCode, MessageSquare,
-  AlertCircle, Sun, Moon, Settings as SettingsIcon, Shield,
-  Plus, Clock,
+  PenLine, Sparkles, ArrowRight, FileText, Clock,
+  Sun, Moon, Settings as SettingsIcon, Shield,
+  Plus, BookOpen, Mail, Linkedin, FileCode, MessageSquare,
 } from 'lucide-react';
-import { callAI, plainTextToContent } from '@/lib/ai';
 import { supabase } from '@/lib/supabase';
 import { useTheme } from '@/hooks/useTheme';
 import type { Document } from '@/lib/types';
 import type { Session } from '@supabase/supabase-js';
 import GuestLanding from '@/components/GuestLanding';
 
-const WRITING_TYPES = [
-  { icon: <BookOpen size={14} />, label: 'Blog post', prompt: 'a blog post about ' },
-  { icon: <Mail size={14} />, label: 'Email', prompt: 'a professional email about ' },
-  { icon: <Linkedin size={14} />, label: 'LinkedIn post', prompt: 'a LinkedIn post about ' },
-  { icon: <FileCode size={14} />, label: 'Documentation', prompt: 'technical documentation for ' },
-  { icon: <MessageSquare size={14} />, label: 'Essay', prompt: 'a thoughtful essay about ' },
-  { icon: <FileText size={14} />, label: 'Report', prompt: 'a report on ' },
+const QUICK_TYPES = [
+  { icon: <BookOpen size={16} />, label: 'Blog post' },
+  { icon: <Mail size={16} />, label: 'Email' },
+  { icon: <Linkedin size={16} />, label: 'LinkedIn post' },
+  { icon: <FileCode size={16} />, label: 'Documentation' },
+  { icon: <MessageSquare size={16} />, label: 'Essay' },
+  { icon: <FileText size={16} />, label: 'Report' },
 ];
-
-const TONES = ['Professional', 'Casual', 'Conversational', 'Persuasive', 'Technical'];
 
 interface Props {
   session: Session | null;
   onOpenWorkspace: (doc: Partial<Document> & { isNew?: boolean; initialDescription?: string }) => void;
+  onOpenStorytellers: () => void;
   onOpenSettings: () => void;
   onOpenAdmin: () => void;
   onOpenExtensions: () => void;
@@ -35,16 +32,10 @@ interface Props {
   isAdmin?: boolean;
 }
 
-export default function Home({ session, onOpenWorkspace, onOpenSettings, onOpenAdmin, onOpenExtensions, onSignIn, onSignUp, onNavigate, isAdmin }: Props) {
+export default function Home({ session, onOpenWorkspace, onOpenStorytellers, onOpenSettings, onOpenAdmin, onOpenExtensions, onSignIn, onSignUp, onNavigate, isAdmin }: Props) {
   const { theme, toggle } = useTheme();
-  const [description, setDescription] = useState('');
-  const [selectedTone, setSelectedTone] = useState('');
-  const [showStyle, setShowStyle] = useState(false);
-  const [generating, setGenerating] = useState(false);
-  const [error, setError] = useState('');
   const [recentDocs, setRecentDocs] = useState<Document[]>([]);
   const [loadingDocs, setLoadingDocs] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [scrolled, setScrolled] = useState(false);
 
   const loadRecentDocs = useCallback(async () => {
@@ -77,69 +68,12 @@ export default function Home({ session, onOpenWorkspace, onOpenSettings, onOpenA
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  function autoResize() {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
-  }
-
-  function applyPromptType(prompt: string) {
-    setDescription((prev) => {
-      const cleaned = prev.replace(/^(a blog post about|a professional email about|a LinkedIn post about|technical documentation for|a thoughtful essay about|a report on)\s*/i, '');
-      return prompt + cleaned;
-    });
-    textareaRef.current?.focus();
-  }
-
-  async function handleGenerate() {
-    if (!description.trim() || generating) return;
-    setError('');
-    setGenerating(true);
-
-    try {
-      const instruction = selectedTone
-        ? `${description}. Use a ${selectedTone.toLowerCase()} tone.`
-        : description;
-
-      const res = await callAI(
-        { action: 'write', instruction },
-        session?.access_token
-      );
-
-      const titleMatch = res.content.match(/^#+ (.+)/m) ?? res.content.match(/^(.{10,80})/);
-      const title = titleMatch ? titleMatch[1].replace(/^#+ /, '').trim() : description.slice(0, 60);
-      const body = res.content.replace(/^#+ .+\n*/m, '').trim();
-      const content = plainTextToContent(body || res.content);
-
-      onOpenWorkspace({
-        title,
-        content,
-        plain_text: body || res.content,
-        word_count: (body || res.content).trim().split(/\s+/).length,
-        isNew: true,
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Something went wrong';
-      setError(msg);
-      setGenerating(false);
-    }
-  }
-
   function handleNewDraft() {
-    const title = description.trim() || 'Untitled';
-    onOpenWorkspace({ title, isNew: true });
+    onOpenWorkspace({ title: 'Untitled', isNew: true });
   }
 
   function handleOpenRecent(doc: Document) {
     onOpenWorkspace(doc);
-  }
-
-  function handleKey(e: React.KeyboardEvent) {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      handleGenerate();
-    }
   }
 
   if (!session) {
@@ -179,124 +113,50 @@ export default function Home({ session, onOpenWorkspace, onOpenSettings, onOpenA
         </div>
       </nav>
 
-      {/* Generator */}
-      <div className="relative flex-1 flex flex-col items-center justify-center px-4 pt-16 pb-12 sm:pt-20 overflow-hidden">
+      {/* Storytellers entry */}
+      <div className="relative flex-1 flex flex-col items-center justify-center px-4 pt-12 pb-12 sm:pt-16 overflow-hidden">
         <div className="absolute inset-0 pointer-events-none">
           <div className="absolute top-1/4 left-1/4 w-72 h-72 bg-[#f0eafa]/60 dark:bg-stone-800/30 rounded-full blur-3xl" />
           <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-[#e3d8f2]/40 dark:bg-stone-800/20 rounded-full blur-3xl" />
         </div>
 
         <div className="relative w-full max-w-2xl">
-          <h1 className="text-3xl sm:text-5xl font-bold text-[#34216f] dark:text-stone-100 text-center leading-[1.1] tracking-tight mb-8">
-            Start Writing Now
-          </h1>
-
-          {error && (
-            <div className="flex items-start gap-2 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-300 text-sm rounded-xl px-4 py-3 mb-4">
-              <AlertCircle size={15} className="flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="font-medium">AI isn't configured yet</p>
-                <p className="text-xs mt-0.5 text-amber-700 dark:text-amber-400">
-                  {error.includes('No API key') || error.includes('No AI provider')
-                    ? 'Go to Settings and add your AI provider API key to start writing with AI.'
-                    : error}
-                </p>
-                <button onClick={onOpenSettings} className="text-xs font-medium text-amber-900 dark:text-amber-200 underline mt-1.5">
-                  Open Settings
-                </button>
-              </div>
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#e8e2f1] bg-[#f0eafa] px-3 py-1.5 text-[10px] font-medium text-[#7650a2] dark:border-stone-800 dark:bg-stone-900 dark:text-stone-400 mb-5">
+              <Sparkles size={11} className="text-[#d79bb6]" /> Storytellers
             </div>
-          )}
-
-          {/* Input card */}
-          <div className="bg-white dark:bg-stone-900 border border-[#e8e2f1] dark:border-stone-800 rounded-2xl shadow-lg shadow-[#34216f]/10 dark:shadow-none overflow-hidden">
-            <div className="px-4 pt-4 pb-3 border-b border-[#f0eafa] dark:border-stone-800">
-              <div className="flex flex-wrap gap-2">
-                {WRITING_TYPES.map((wt) => (
-                  <button
-                    key={wt.label}
-                    onClick={() => applyPromptType(wt.prompt)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f5edf9] dark:bg-stone-800 hover:bg-[#f0eafa] dark:hover:bg-stone-700 border border-[#e8e2f1] dark:border-stone-700 rounded-lg text-xs text-[#5b3d8d] dark:text-stone-300 font-medium transition hover:scale-[1.02] active:scale-[0.98]"
-                  >
-                    {wt.icon}
-                    {wt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="px-4 py-4">
-              <textarea
-                ref={textareaRef}
-                value={description}
-                onChange={(e) => { setDescription(e.target.value); autoResize(); }}
-                onKeyDown={handleKey}
-                placeholder="Tell me what you want to create... e.g. a blog post about the future of remote work for tech teams"
-                rows={3}
-                className="w-full resize-none text-slate-800 dark:text-stone-100 text-base placeholder:text-slate-400 dark:placeholder:text-stone-500 outline-none leading-relaxed bg-transparent"
-                style={{ fontFamily: 'inherit' }}
-              />
-            </div>
-
-            <div className="px-4 pb-4">
-              <button
-                onClick={() => setShowStyle(!showStyle)}
-                className="text-xs text-[#b07aa2] dark:text-stone-500 hover:text-[#34216f] dark:hover:text-stone-300 transition flex items-center gap-1"
-              >
-                <Wand2 size={11} />
-                {showStyle ? 'Hide style options' : 'Add writing style'}
-              </button>
-              {showStyle && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {TONES.map((tone) => (
-                    <button
-                      key={tone}
-                      onClick={() => setSelectedTone(selectedTone === tone ? '' : tone)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
-                        selectedTone === tone
-                          ? 'bg-[#34216f] dark:bg-stone-100 text-white dark:text-stone-900 border-[#34216f] dark:border-stone-100'
-                          : 'bg-white dark:bg-stone-900 text-[#5b3d8d] dark:text-stone-300 border-[#e8e2f1] dark:border-stone-700 hover:border-[#7650a2] dark:hover:border-stone-500'
-                      }`}
-                    >
-                      {tone}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="px-4 py-3 bg-[#fcfbff] dark:bg-stone-800/50 border-t border-[#f0eafa] dark:border-stone-800 flex items-center justify-between gap-3">
-              <button
-                onClick={handleNewDraft}
-                className="flex items-center gap-1.5 text-sm text-[#7650a2] dark:text-stone-400 hover:text-[#34216f] dark:hover:text-stone-100 font-medium transition"
-              >
-                <FileText size={14} />
-                New blank draft
-              </button>
-              <button
-                onClick={handleGenerate}
-                disabled={!description.trim() || generating}
-                className="flex items-center gap-2 bg-[#34216f] dark:bg-stone-100 hover:bg-[#4e348d] dark:hover:bg-stone-200 disabled:bg-stone-300 dark:disabled:bg-stone-700 text-white dark:text-stone-900 text-sm font-medium px-5 py-2.5 rounded-xl transition disabled:cursor-not-allowed hover:scale-[1.02] active:scale-[0.98]"
-              >
-                {generating ? (
-                  <>
-                    <Loader2 size={14} className="animate-spin" />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles size={14} />
-                    Generate
-                    <ArrowRight size={14} />
-                  </>
-                )}
-              </button>
-            </div>
+            <h1 className="font-serif text-3xl sm:text-5xl text-[#34216f] dark:text-stone-100 text-center leading-[1.1] tracking-tight mb-4">
+              Every story starts with an idea.
+            </h1>
+            <p className="text-sm text-slate-500 dark:text-stone-400 max-w-md mx-auto">
+              Tell us what you want to create. We'll help you shape it into something worth reading.
+            </p>
           </div>
 
-          <p className="text-center text-xs text-[#b07aa2] dark:text-stone-500 mt-4">
-            Cmd/Ctrl + Enter to generate &nbsp;·&nbsp; No prompts, no settings needed
-          </p>
+          {/* Primary CTA card */}
+          <div className="bg-white dark:bg-stone-900 border border-[#e8e2f1] dark:border-stone-800 rounded-2xl shadow-lg shadow-[#34216f]/10 dark:shadow-none p-6 sm:p-8">
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-6">
+              {QUICK_TYPES.map((qt) => (
+                <div key={qt.label} className="flex flex-col items-center gap-1.5 p-2.5 rounded-xl bg-[#f5edf9] dark:bg-stone-800/50 text-center">
+                  <span className="text-[#34216f] dark:text-stone-300">{qt.icon}</span>
+                  <span className="text-[9px] font-medium text-[#7650a2] dark:text-stone-400 leading-tight">{qt.label}</span>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={onOpenStorytellers}
+              className="w-full flex items-center justify-center gap-2 bg-[#34216f] hover:bg-[#4e348d] text-white text-sm font-semibold py-3.5 rounded-xl transition hover:scale-[1.01] active:scale-[0.99]"
+            >
+              <PenLine size={15} /> Start writing <ArrowRight size={14} />
+            </button>
+            <button
+              onClick={handleNewDraft}
+              className="w-full flex items-center justify-center gap-2 text-[#7650a2] dark:text-stone-400 text-sm font-medium py-2.5 mt-2 hover:text-[#34216f] dark:hover:text-stone-100 transition"
+            >
+              <FileText size={14} /> Or start with a blank draft
+            </button>
+          </div>
         </div>
       </div>
 
@@ -319,7 +179,7 @@ export default function Home({ session, onOpenWorkspace, onOpenSettings, onOpenA
             </div>
             {loadingDocs ? (
               <div className="flex justify-center py-6">
-                <Loader2 size={16} className="animate-spin text-[#d79bb6]" />
+                <div className="w-5 h-5 border-2 border-[#d79bb6] border-t-transparent rounded-full animate-spin" />
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">

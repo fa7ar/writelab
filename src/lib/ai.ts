@@ -3,16 +3,28 @@ import type { AIRequest, AIResponse } from './types';
 const EDGE_FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-gateway`;
 const ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
+interface GatewayHeaders {
+  'Content-Type': string;
+  Authorization: string;
+  apikey: string;
+}
+
+function buildHeaders(token?: string): GatewayHeaders {
+  const authToken = token ?? ANON_KEY;
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${authToken}`,
+    apikey: ANON_KEY,
+  };
+}
+
 export async function callAI(
   request: AIRequest,
   token?: string
 ): Promise<AIResponse> {
   const response = await fetch(EDGE_FUNCTION_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token ?? ANON_KEY}`,
-    },
+    headers: buildHeaders(token),
     body: JSON.stringify({ ...request, stream: false }),
   });
 
@@ -28,16 +40,13 @@ export async function callAI(
 
 export async function streamAI(
   request: AIRequest,
-  token: string,
+  token: string | undefined,
   onChunk: (text: string) => void,
   signal?: AbortSignal
 ): Promise<void> {
   const response = await fetch(EDGE_FUNCTION_URL, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
+    headers: buildHeaders(token),
     body: JSON.stringify({ ...request, stream: true }),
     signal,
   });

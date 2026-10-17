@@ -1,0 +1,5 @@
+[functions.ai-gateway]
+verify_jwt = false
+
+[functions.extension-action]
+verify_jwt = true
