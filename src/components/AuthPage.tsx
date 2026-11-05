@@ -3,7 +3,7 @@ import {
   PenLine, Loader2, AlertCircle, Sparkles, Layers, Lock, Zap,
   FileText, PencilLine, Rocket,
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { useTheme } from '@/hooks/useTheme';
 import { Sun, Moon } from 'lucide-react';
 
@@ -35,6 +35,10 @@ export default function AuthPage({ onAuthenticated }: Props) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+    if (!isSupabaseConfigured) {
+      setError('Authentication is not configured yet. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your Cloudflare build environment.');
+      return;
+    }
     setLoading(true);
 
     try {
@@ -133,7 +137,7 @@ export default function AuthPage({ onAuthenticated }: Props) {
 
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || !isSupabaseConfigured}
                   className="w-full flex items-center justify-center gap-2 bg-stone-900 dark:bg-stone-100 hover:bg-stone-800 dark:hover:bg-stone-200 text-white dark:text-stone-900 font-medium text-sm py-2.5 rounded-lg transition disabled:opacity-60 disabled:cursor-not-allowed mt-2"
                 >
                   {loading ? (
